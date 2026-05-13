@@ -1026,6 +1026,60 @@ async def test_choose_option_by_image_uses_caption_and_option_index(signer_facto
 
 
 @pytest.mark.asyncio
+async def test_choose_option_by_image_uses_previous_photo_for_split_keyboard(
+    signer_factory,
+):
+    signer = signer_factory()
+    ai_tools = SimpleNamespace(choose_option_by_image=AsyncMock(return_value=1))
+    signer.get_ai_tools = lambda: ai_tools
+    signer.app.download_media = AsyncMock(return_value=BytesIO(b"image-bytes"))
+    signer.request_callback_answer = AsyncMock(return_value=None)
+    photo_message = SimpleNamespace(
+        id=98,
+        text=None,
+        caption=None,
+        chat=SimpleNamespace(id=123),
+        photo=SimpleNamespace(file_id="photo-id"),
+        reply_markup=None,
+    )
+    button_message = SimpleNamespace(
+        id=99,
+        text="请选择图中的物品",
+        caption=None,
+        chat=SimpleNamespace(id=123),
+        photo=None,
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton("手机", callback_data="answer:phone"),
+                    InlineKeyboardButton("电视盒子", callback_data="answer:tv"),
+                ]
+            ]
+        ),
+    )
+
+    ok = await signer._choose_option_by_image(
+        ChooseOptionByImageAction(),
+        button_message,
+        [photo_message, button_message],
+    )
+
+    assert ok is True
+    signer.app.download_media.assert_awaited_once_with("photo-id", in_memory=True)
+    ai_tools.choose_option_by_image.assert_awaited_once_with(
+        b"image-bytes",
+        "请选择图中的物品",
+        [(0, "手机"), (1, "电视盒子")],
+    )
+    signer.request_callback_answer.assert_awaited_once_with(
+        signer.app,
+        123,
+        99,
+        "answer:tv",
+    )
+
+
+@pytest.mark.asyncio
 async def test_choose_option_by_image_rejects_invalid_option_index(signer_factory):
     signer = signer_factory()
     ai_tools = SimpleNamespace(choose_option_by_image=AsyncMock(return_value=9))

@@ -1232,13 +1232,35 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
             return True
         return False
 
-    async def _choose_option_by_image(self, action: ChooseOptionByImageAction, message):
+    def _find_previous_photo_message(self, messages: list[Message], message: Message):
+        try:
+            message_index = next(
+                index for index, item in enumerate(messages) if item is message
+            )
+        except StopIteration:
+            return None
+        for previous_message in reversed(messages[:message_index]):
+            if previous_message and previous_message.photo:
+                return previous_message
+        return None
+
+    async def _choose_option_by_image(
+        self,
+        action: ChooseOptionByImageAction,
+        message,
+        previous_messages: list[Message] = None,
+    ):
         buttons = _get_inline_keyboard_buttons(message)
-        if buttons and message.photo:
+        photo_message = message
+        if buttons and not message.photo and previous_messages:
+            photo_message = self._find_previous_photo_message(
+                previous_messages, message
+            )
+        if buttons and photo_message and photo_message.photo:
             options = [btn.text for btn in buttons]
             self.log("检测到图片，尝试调用大模型进行图片识别并选择选项")
             image_buffer: BinaryIO = await self.app.download_media(
-                message.photo.file_id, in_memory=True
+                photo_message.photo.file_id, in_memory=True
             )
             image_buffer.seek(0)
             image_bytes = image_buffer.read()
@@ -1304,7 +1326,7 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
                 elif isinstance(action, ReplyByCalculationProblemAction):
                     ok = await self._reply_by_calculation_problem(action, message)
                 elif isinstance(action, ChooseOptionByImageAction):
-                    ok = await self._choose_option_by_image(action, message)
+                    ok = await self._choose_option_by_image(action, message, messages)
                 if ok:
                     self.context.waiter.sub(route_key)
                     # 将消息ID对应value置为None，保证收到消息的编辑时消息所处的顺序
