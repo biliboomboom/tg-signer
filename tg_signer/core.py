@@ -1295,6 +1295,8 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
                 continue
             last_message = messages[-1]
             for message in messages:
+                if message is None:
+                    continue
                 self.context.waiting_message = message
                 ok = False
                 if isinstance(action, ClickKeyboardByTextAction):

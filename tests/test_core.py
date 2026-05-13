@@ -842,6 +842,32 @@ async def test_wait_for_uses_resolved_route_key_for_username(signer_factory):
 
 
 @pytest.mark.asyncio
+async def test_wait_for_skips_consumed_message_placeholders(signer_factory):
+    signer = signer_factory()
+    signer.context = signer.ensure_ctx()
+    chat = SignChatV3(
+        chat_id=123,
+        actions=[ClickKeyboardByTextAction(text="签到")],
+    )
+    route_key = signer.get_route_key(123, None)
+    message = SimpleNamespace(
+        id=100,
+        text="签到",
+        photo=None,
+        reply_markup=None,
+    )
+    signer.context.chat_messages[route_key][99] = None
+    signer.context.chat_messages[route_key][100] = message
+    signer._click_keyboard_by_text = AsyncMock(return_value=True)
+
+    await signer.wait_for(chat, chat.actions[0], timeout=0.5)
+
+    signer._click_keyboard_by_text.assert_awaited_once_with(chat.actions[0], message)
+    assert signer.context.chat_messages[route_key][99] is None
+    assert signer.context.chat_messages[route_key][100] is None
+
+
+@pytest.mark.asyncio
 async def test_reply_by_calculation_problem_clicks_caption_inline_answer(
     signer_factory,
 ):
