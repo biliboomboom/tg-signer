@@ -1187,27 +1187,53 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
     async def _reply_by_calculation_problem(
         self, action: ReplyByCalculationProblemAction, message
     ):
+        import re
         text = _get_message_text(message)
         if text:
-            self.log("检测到文本回复，尝试调用大模型进行计算题回答")
+            self.log("检测到文本回复，尝试回答计算题")
             self.log(f"问题: \n{text}")
+
+            # 先尝试简单数学计算（不使用大模型）
+            math_match = re.search(r'(\d+[\+\-\*\/]\d+)\s*=\s*\?', text)
+            if math_match:
+                expression = math_match.group(1)
+                try:
+                    answer = str(eval(expression))
+                    self.log(f"使用内置计算: {expression} = {answer}")
+                except Exception as e:
+                    self.log(f"内置计算失败: {e}", level="WARNING")
+                    # 如果内置计算失败，再调用大模型
+                    answer = await self.get_ai_tools().calculate_problem(text)
+            else:
+                # 如果不是简单数学表达式，尝试调用大模型
+                self.log("非简单数学表达式，尝试调用大模型")
+                option_to_btn = {}
+                buttons = _get_inline_keyboard_buttons(message)
+                if buttons:
+                    option_to_btn = {
+                        _normalize_option_text(btn.text): btn for btn in buttons
+                    }
+                query = text
+                if option_to_btn:
+                    options = [btn.text for btn in option_to_btn.values()]
+                    query = (
+                        f"{text}\n\n"
+                        f"可选答案：{json.dumps(options, ensure_ascii=False)}\n"
+                        "请只从可选答案中选择最匹配的一项，并原样回复该选项文本。"
+                    )
+                answer = await self.get_ai_tools().calculate_problem(query)
+
+            answer = answer.strip()
+            self.log(f"回答为: {answer}")
+
+            # 检查是否有按钮需要点击
             option_to_btn = {}
             buttons = _get_inline_keyboard_buttons(message)
             if buttons:
                 option_to_btn = {
                     _normalize_option_text(btn.text): btn for btn in buttons
                 }
-            query = text
-            if option_to_btn:
-                options = [btn.text for btn in option_to_btn.values()]
-                query = (
-                    f"{text}\n\n"
-                    f"可选答案：{json.dumps(options, ensure_ascii=False)}\n"
-                    "请只从可选答案中选择最匹配的一项，并原样回复该选项文本。"
-                )
-            answer = await self.get_ai_tools().calculate_problem(query)
-            answer = answer.strip()
-            self.log(f"回答为: {answer}")
+
             if option_to_btn:
                 target_btn = option_to_btn.get(_normalize_option_text(answer))
                 if not target_btn:
