@@ -695,11 +695,16 @@ class BaseUserWorker(Generic[ConfigT]):
         cfg_manager = OpenAIConfigManager(self.workdir)
         cfg = cfg_manager.load_config()
         if not cfg:
-            cfg = cfg_manager.ask_for_config()
+            # 在非交互模式下，如果没有配置则返回None而不是尝试配置
+            return None
         return cfg
 
     def get_ai_tools(self):
-        return AITools(self.ensure_ai_cfg())
+        cfg = self.ensure_ai_cfg()
+        if cfg is None:
+            # 返回一个空的AITools，避免NoneType错误
+            return AITools.__new__(AITools)
+        return AITools(cfg)
 
 
 class Waiter:
