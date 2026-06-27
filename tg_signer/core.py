@@ -1189,74 +1189,36 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
     ):
         import re
         text = _get_message_text(message)
-        if text:
-            self.log("检测到文本回复，尝试回答计算题")
-            self.log(f"问题: \n{text}")
-
-            # 先尝试简单数学计算（不使用大模型）
-            math_match = re.search(r'(\d+[\+\-\*\/]\d+)\s*=\s*\?', text)
-            if math_match:
-                expression = math_match.group(1)
-                try:
-                    answer = str(eval(expression))
-                    self.log(f"使用内置计算: {expression} = {answer}")
-                except Exception as e:
-                    self.log(f"内置计算失败: {e}", level="WARNING")
-                    # 如果内置计算失败，再调用大模型
-                    answer = await self.get_ai_tools().calculate_problem(text)
-            else:
-                # 如果不是简单数学表达式，尝试调用大模型
-                self.log("非简单数学表达式，尝试调用大模型")
-                option_to_btn = {}
-                buttons = _get_inline_keyboard_buttons(message)
-                if buttons:
-                    option_to_btn = {
-                        _normalize_option_text(btn.text): btn for btn in buttons
-                    }
-                query = text
-                if option_to_btn:
-                    options = [btn.text for btn in option_to_btn.values()]
-                    query = (
-                        f"{text}\n\n"
-                        f"可选答案：{json.dumps(options, ensure_ascii=False)}\n"
-                        "请只从可选答案中选择最匹配的一项，并原样回复该选项文本。"
-                    )
-                answer = await self.get_ai_tools().calculate_problem(query)
-
-            answer = answer.strip()
-            self.log(f"回答为: {answer}")
-
-            # 检查是否有按钮需要点击
-            option_to_btn = {}
-            buttons = _get_inline_keyboard_buttons(message)
-            if buttons:
-                option_to_btn = {
-                    _normalize_option_text(btn.text): btn for btn in buttons
-                }
-
-            if option_to_btn:
-                target_btn = option_to_btn.get(_normalize_option_text(answer))
-                if not target_btn:
-                    self.log("未找到匹配的按钮", level="WARNING")
-                    return False
-                if not target_btn.callback_data:
-                    self.log("匹配的按钮没有 callback_data，无法点击", level="WARNING")
-                    return False
-                self.log(f"点击按钮: {target_btn.text}")
-                await self.request_callback_answer(
-                    self.app,
-                    message.chat.id,
-                    message.id,
-                    target_btn.callback_data,
-                )
-                return True
-            await self.send_message(
-                message.chat.id,
-                answer,
-                message_thread_id=getattr(message, "message_thread_id", None),
-            )
-            return True
-        return False
+        if not text:
+            return False
+        
+        # 只处理包含数学表达式的消息（如 "2+1=?" 或 "9+9=?"）
+        math_match = re.search(r'(\d+[\+\-\*\/]\d+)\s*=\s*[\?？]', text)
+        if not math_match:
+            # 不是数学题，返回 False 让 wait_for 继续等待下一个消息
+            return False
+        
+        self.log("检测到数学题，尝试回答")
+        self.log(f"问题: 
+{text}")
+        
+        expression = math_match.group(1)
+        try:
+            answer = str(eval(expression))
+            self.log(f"使用内置计算: {expression} = {answer}")
+        except Exception as e:
+            self.log(f"内置计算失败: {e}", level="WARNING")
+            # 如果内置计算失败，返回 False
+            return False
+        
+        answer = answer.strip()
+        self.log(f"回答为: {answer}")
+        await self.send_message(
+            message.chat.id,
+            answer,
+            message_thread_id=getattr(message, "message_thread_id", None),
+        )
+        return True
 
     def _find_previous_photo_message(self, messages: list[Message], message: Message):
         try:
