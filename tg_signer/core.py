@@ -1199,8 +1199,7 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
             return False
         
         self.log("检测到数学题，尝试回答")
-        self.log(f"问题: 
-{text}")
+        self.log(f"问题: \n{text}")
         
         expression = math_match.group(1)
         try:
